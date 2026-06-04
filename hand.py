@@ -1,149 +1,141 @@
-import cv2
-import numpy as np
+# Hand Gesture Recognition using ASL Alphabet Dataset
+# SkillCraft Technology - Task 04
+
+import tensorflow as tf
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
-from tensorflow.keras.models import Sequential, load_model
+from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import Conv2D, MaxPooling2D, Flatten, Dense
+import matplotlib.pyplot as plt
 
-# =========================
-# 1. DATASET PATH
-# =========================
-train_path = "train2"
-model_path = "model.keras"
+# ==========================================
+# STEP 1: DATASET PATH
+# ==========================================
 
-# =========================
-# 2. GESTURE NAMES (0–19)
-# =========================
-gesture_names = [
-    "Fist (Stop)",            # 0
-    "Open Palm (Hello)",      # 1
-    "Peace Sign",             # 2
-    "Thumbs Up",              # 3
-    "Thumbs Down",            # 4
-    "OK Sign",                # 5
-    "Point Left",            # 6
-    "Point Right",           # 7
-    "Point Up",              # 8
-    "Point Down",            # 9
-    "Call Me",               # 10
-    "Rock Sign",             # 11
-    "Three Fingers",         # 12
-    "Four Fingers",          # 13
-    "Five Fingers Spread",   # 14
-    "L Sign",                # 15
-    "Pinch Gesture",        # 16
-    "Swipe Left",           # 17
-    "Swipe Right",          # 18
-    "Custom Gesture"        # 19
-]
+dataset_path = "asl_alphabet_train"   # Change if needed
 
-# =========================
-# 3. TRAIN MODEL
-# =========================
-def train_model():
+# ==========================================
+# STEP 2: LOAD DATASET
+# ==========================================
 
-    datagen = ImageDataGenerator(
-        rescale=1./255,
-        validation_split=0.2
+data_generator = ImageDataGenerator(
+    rescale=1/255,
+    validation_split=0.2
+)
+
+train_data = data_generator.flow_from_directory(
+    dataset_path,
+    target_size=(64, 64),
+    batch_size=32,
+    class_mode='categorical',
+    subset='training'
+)
+
+validation_data = data_generator.flow_from_directory(
+    dataset_path,
+    target_size=(64, 64),
+    batch_size=32,
+    class_mode='categorical',
+    subset='validation'
+)
+
+# ==========================================
+# STEP 3: BUILD CNN MODEL
+# ==========================================
+
+model = Sequential()
+
+# First Convolution Layer
+model.add(
+    Conv2D(
+        32,
+        (3,3),
+        activation='relu',
+        input_shape=(64,64,3)
     )
+)
 
-    train_data = datagen.flow_from_directory(
-        train_path,
-        target_size=(64, 64),
-        batch_size=32,
-        class_mode='categorical',
-        subset='training'
+model.add(MaxPooling2D(2,2))
+
+# Second Convolution Layer
+model.add(
+    Conv2D(
+        64,
+        (3,3),
+        activation='relu'
     )
+)
 
-    val_data = datagen.flow_from_directory(
-        train_path,
-        target_size=(64, 64),
-        batch_size=32,
-        class_mode='categorical',
-        subset='validation'
+model.add(MaxPooling2D(2,2))
+
+# Flatten Layer
+model.add(Flatten())
+
+# Hidden Layer
+model.add(Dense(128, activation='relu'))
+
+# Output Layer
+model.add(
+    Dense(
+        train_data.num_classes,
+        activation='softmax'
     )
+)
 
-    model = Sequential([
-        Conv2D(32, (3,3), activation='relu', input_shape=(64,64,3)),
-        MaxPooling2D(2,2),
+# ==========================================
+# STEP 4: COMPILE MODEL
+# ==========================================
 
-        Conv2D(64, (3,3), activation='relu'),
-        MaxPooling2D(2,2),
+model.compile(
+    optimizer='adam',
+    loss='categorical_crossentropy',
+    metrics=['accuracy']
+)
 
-        Flatten(),
-        Dense(128, activation='relu'),
-        Dense(train_data.num_classes, activation='softmax')
-    ])
+# Show Model Structure
+model.summary()
 
-    model.compile(optimizer='adam',
-                  loss='categorical_crossentropy',
-                  metrics=['accuracy'])
+# ==========================================
+# STEP 5: TRAIN MODEL
+# ==========================================
 
-    model.fit(train_data, validation_data=val_data, epochs=10)
+history = model.fit(
+    train_data,
+    validation_data=validation_data,
+    epochs=5
+)
 
-    model.save(model_path)
+# ==========================================
+# STEP 6: EVALUATE MODEL
+# ==========================================
 
-    print("✅ Model trained and saved!")
+loss, accuracy = model.evaluate(validation_data)
 
-# =========================
-# 4. REAL-TIME PREDICTION
-# =========================
-def run_camera():
+print("\nModel Accuracy:", round(accuracy * 100, 2), "%")
 
-    model = load_model(model_path)
+# ==========================================
+# STEP 7: SAVE MODEL
+# ==========================================
 
-    cap = cv2.VideoCapture(0)
+model.save("hand_gesture_model.h5")
 
-    while True:
-        ret, frame = cap.read()
-        if not ret:
-            break
+print("Model saved successfully!")
 
-        frame = cv2.flip(frame, 1)
+# ==========================================
+# STEP 8: PLOT ACCURACY GRAPH
+# ==========================================
 
-        img = cv2.resize(frame, (64, 64))
-        img = img / 255.0
-        img = np.expand_dims(img, axis=0)
+plt.figure(figsize=(10,5))
 
-        prediction = model.predict(img, verbose=0)
+plt.plot(history.history['accuracy'])
+plt.plot(history.history['val_accuracy'])
 
-        class_id = np.argmax(prediction)
-        confidence = np.max(prediction)
+plt.title("Training vs Validation Accuracy")
+plt.xlabel("Epoch")
+plt.ylabel("Accuracy")
 
-        # SAFE LABEL MAPPING
-        if class_id < len(gesture_names):
-            label = gesture_names[class_id]
-        else:
-            label = f"Unknown ({class_id})"
+plt.legend([
+    "Training Accuracy",
+    "Validation Accuracy"
+])
 
-        cv2.putText(frame, f"Gesture: {label}", (10, 40),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0,255,0), 2)
-
-        cv2.putText(frame, f"Confidence: {confidence:.2f}", (10, 80),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255,0,0), 2)
-
-        cv2.imshow("Hand Gesture Recognition", frame)
-
-        if cv2.waitKey(1) & 0xFF == ord('q'):
-            break
-
-    cap.release()
-    cv2.destroyAllWindows()
-
-# =========================
-# 5. MAIN MENU
-# =========================
-if __name__ == "__main__":
-
-    print("\n1. Train Model")
-    print("2. Run Webcam Prediction")
-
-    choice = input("Enter choice: ")
-
-    if choice == "1":
-        train_model()
-
-    elif choice == "2":
-        run_camera()
-
-    else:
-        print("Invalid choice")
+plt.show()
